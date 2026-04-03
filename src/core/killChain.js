@@ -11,15 +11,31 @@ import { EventEmitter } from 'node:events';
  */
 
 export const TECHNIQUES = {
-  'port-scan':   { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
-  'syn-scan':    { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
-  'xmas-scan':   { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1595.001',sub: null,        name: 'Active Scanning: Wordlist Scan' },
-  'null-scan':   { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: null,        name: 'Network Service Scanning' },
-  'honeypot':    { stage: 'discovery', tactic: 'Discovery',            id: 'T1018',    sub: 'T1590',     name: 'Remote System Discovery' },
-  'exfil':       { stage: 'exfil',     tactic: 'Exfiltration',         id: 'T1048',    sub: 'T1041',     name: 'Exfiltration Over Alternative Protocol' },
-  'dns-tunnel':  { stage: 'c2',        tactic: 'Command and Control',  id: 'T1071.004',sub: 'T1568',     name: 'Application Layer Protocol: DNS' },
-  'rate-flood':  { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1498',    sub: null,        name: 'Network Denial of Service' },
-  'c2':          { stage: 'c2',        tactic: 'Command and Control',  id: 'T1071',    sub: null,        name: 'Application Layer Protocol' },
+  'port-scan':      { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
+  'port_scan':      { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
+  'syn-scan':       { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
+  'syn_scan':       { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
+  'connect-scan':   { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
+  'connect_scan':   { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
+  'xmas-scan':      { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1595.001',sub: null,        name: 'Active Scanning: Wordlist Scan' },
+  'xmas_scan':      { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1595.001',sub: null,        name: 'Active Scanning: Wordlist Scan' },
+  'null-scan':      { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: null,        name: 'Network Service Scanning' },
+  'null_scan':      { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: null,        name: 'Network Service Scanning' },
+  'fin-scan':       { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: null,        name: 'Network Service Scanning' },
+  'fin_scan':       { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: null,        name: 'Network Service Scanning' },
+  'udp-scan':       { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
+  'udp_scan':       { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
+  'slow-scan':      { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1592',     name: 'Network Service Scanning' },
+  'slow_scan':      { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1592',     name: 'Network Service Scanning' },
+  'port-sweep':     { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
+  'port_sweep':     { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
+  'honeypot':       { stage: 'discovery', tactic: 'Discovery',            id: 'T1018',    sub: 'T1590',     name: 'Remote System Discovery' },
+  'honeypot-hit':   { stage: 'discovery', tactic: 'Discovery',            id: 'T1018',    sub: 'T1590',     name: 'Remote System Discovery' },
+  'exfil':          { stage: 'exfil',     tactic: 'Exfiltration',         id: 'T1048',    sub: 'T1041',     name: 'Exfiltration Over Alternative Protocol' },
+  'dns-tunnel':     { stage: 'c2',        tactic: 'Command and Control',  id: 'T1071.004',sub: 'T1568',     name: 'Application Layer Protocol: DNS' },
+  'c2':             { stage: 'c2',        tactic: 'Command and Control',  id: 'T1071',    sub: null,        name: 'Application Layer Protocol' },
+  'rate-flood':     { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1498',    sub: null,        name: 'Network Denial of Service' },
+  'scan-detected':  { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
 };
 
 const STAGE_ORDER = ['recon', 'discovery', 'c2', 'exfil'];
@@ -76,8 +92,8 @@ export class KillChainTracker extends EventEmitter {
         chain.stages.set(technique.stage, Date.now());
         newStage = true;
       }
-      chain.score = Math.min(100, chain.score + this._scoreFor(eventType));
     }
+    chain.score = Math.min(100, chain.score + this._scoreFor(eventType));
 
     this.emit('event-recorded', { ip, chain: this._serialise(chain), technique, newStage });
 

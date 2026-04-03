@@ -1,4 +1,6 @@
 import { EventEmitter } from 'node:events';
+import { ShieldLogger } from './utils/logger.js';
+import { PersistenceStore } from './persistence/store.js';
 
 // Core
 import { PortScanDetector } from './core/portScanner.js';
@@ -50,6 +52,12 @@ export class Shield extends EventEmitter {
 
     // pulse integration (optional — pass opts.pulse to enable)
     this.pulse = opts.pulse ? new PulseShield({ shield: this, ...opts.pulse }) : null;
+
+    // audit logger
+    this.logger = new ShieldLogger(opts.logging);
+
+    // SQL persistence
+    this.persistence = opts.persistence ? new PersistenceStore(opts.persistence) : null;
 
     this._wired = false;
   }
@@ -152,6 +160,45 @@ export class Shield extends EventEmitter {
         this.emit('coordination-detected', result);
       });
     }
+
+    // audit logging & persistence
+    this.on('scan', (det) => {
+      this.logger.security('PortScanner', 'scan-detected', det.ip, det.severity, det);
+      if (this.persistence) this.persistence.saveThreatEvent({ ...det, type: 'port-scan' });
+    });
+
+    this.on('honeypot', (conn) => {
+      this.logger.security('Honeypot', 'honeypot-hit', conn.ip, 'high', conn);
+      if (this.persistence) this.persistence.saveThreatEvent({ ...conn, type: 'honeypot-hit', severity: 'high' });
+    });
+
+    this.on('exfil', (alert) => {
+      this.logger.security('ExfilDetector', 'exfil-suspected', alert.remoteAddr || 'local', alert.severity, alert);
+      if (this.persistence) this.persistence.saveThreatEvent({ ...alert, type: 'exfil' });
+    });
+
+    this.on('dns-tunnel', (alert) => {
+      this.logger.security('DNSMonitor', 'dns-tunnel-detected', alert.ip, 'high', alert);
+      if (this.persistence) this.persistence.saveThreatEvent({ ...alert, type: 'dns-tunnel', severity: 'high' });
+    });
+
+    this.alerts.on('alert', (alert) => {
+      if (this.persistence) this.persistence.saveAlert(alert);
+    });
+
+    this.threatIntel.on('reputation-changed', (rep) => {
+      if (this.persistence) this.persistence.saveReputation(rep.ip, this.threatIntel.getProfile(rep.ip));
+    });
+
+    this.killChain.on('event-recorded', (e) => {
+      if (this.persistence) this.persistence.saveKillChain(this.killChain.getChain(e.ip));
+    });
+
+    if (this.mesh) {
+      this.mesh.on('threat-received', (e) => {
+        if (this.persistence) this.persistence.saveMeshEvent(e);
+      });
+    }
   }
 
   async start() {
@@ -168,7 +215,12 @@ export class Shield extends EventEmitter {
 
     if (this.mesh) await this.mesh.start();
 
-    this.emit('started', {
+    if (this.persistence) {
+      await this.persistence.open();
+      // TODO: hydration logic for threatIntel/killChain from DB
+    }
+
+    this.logger.info('Shield', 'started', {
       honeypots: this.honeypot.activePorts.length,
       mesh:      !!this.mesh,
     });
@@ -197,6 +249,33 @@ export class Shield extends EventEmitter {
       honeypotHits:      this.honeypot.getConnectionInfo(ip),
       alerts:            this.alerts.query({ ip }),
       rateLimit:         this.rateLimiter.getProfile(ip),
+      killChain:         this.killChain.getChain(ip),
+    };
+  }
+
+  /**
+   * Generates a comprehensive forensic report for an IP.
+   */
+  collectEvidence(ip) {
+    const raw = this.investigate(ip);
+    const summary = {
+      ip,
+      threatScore: raw.reputation?.score ?? 0.5,
+      classification: raw.reputation?.classification ?? 'unknown',
+      killChainStage: raw.killChain?.stageList.pop() || 'none',
+      totalAlerts: raw.alerts.length,
+      firstSeen: raw.reputation?.firstSeen,
+      lastSeen: raw.reputation?.lastSeen,
+    };
+
+    return {
+      metadata: {
+        generatedAt: new Date().toISOString(),
+        shieldVersion: '0.2.0',
+        targetIP: ip,
+      },
+      summary,
+      evidence: raw,
     };
   }
 

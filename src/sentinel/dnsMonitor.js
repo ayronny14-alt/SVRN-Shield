@@ -4,6 +4,7 @@ import { promisify } from 'node:util';
 import { platform } from 'node:os';
 import { stringEntropy } from '../utils/entropy.js';
 import { RingBuffer } from '../utils/ringBuffer.js';
+import { BehavioralBaseline } from '../utils/stats.js';
 
 const exec = promisify(execFile);
 
@@ -163,10 +164,23 @@ export class DNSMonitor extends EventEmitter {
 
     // check query rate
     const age = (Date.now() - p.firstSeen) / 60_000;
-    if (age > 0.5 && p.queryCount / age > this._thresholds.queryRateThreshold) {
+    const currentRate = p.queryCount / (age || 1);
+    
+    if (!p.baseline) p.baseline = new BehavioralBaseline();
+    if (!p.baseline.isAnomalous(currentRate, 5)) {
+      p.baseline.update(currentRate);
+    }
+
+    if (p.baseline.isAnomalous(currentRate, 4)) {
+      this.emit('anomalous-query-rate', {
+        domain: baseDomain,
+        rate: currentRate,
+        baseline: p.baseline.toJSON(),
+      });
+    } else if (age > 0.5 && currentRate > this._thresholds.queryRateThreshold) {
       this.emit('high-query-rate', {
         domain: baseDomain,
-        rate: p.queryCount / age,
+        rate: currentRate,
         queryCount: p.queryCount,
       });
     }

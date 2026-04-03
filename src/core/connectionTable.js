@@ -4,6 +4,7 @@ import { platform } from 'node:os';
 import { readFile } from 'node:fs/promises';
 import { EventEmitter } from 'node:events';
 import { classifyIP, isPrivateIP } from '../utils/geoip.js';
+import { processCache } from '../utils/processInfo.js';
 
 const exec = promisify(execFile);
 
@@ -43,6 +44,17 @@ export class ConnectionTable extends EventEmitter {
       if (!prev.has(key)) {
         conn.firstSeen = now;
         this._trackIP(conn.remoteAddr, conn);
+        
+        // Resolve process info in the background
+        if (conn.pid) {
+          processCache.get(conn.pid).then(info => {
+            if (info) {
+              conn.commandLine = info.commandLine;
+              conn.ppid = info.ppid;
+            }
+          });
+        }
+        
         this.emit('new-connection', conn);
       } else {
         conn.firstSeen = prev.get(key).firstSeen;

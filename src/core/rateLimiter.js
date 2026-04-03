@@ -1,5 +1,6 @@
 import { EventEmitter } from 'node:events';
 import { RingBuffer } from '../utils/ringBuffer.js';
+import { BehavioralBaseline } from '../utils/stats.js';
 
 export class BehavioralRateLimiter extends EventEmitter {
   constructor(opts = {}) {
@@ -107,30 +108,21 @@ export class BehavioralRateLimiter extends EventEmitter {
     this.emit('limit-exceeded', { id, ...result });
     return result;
   }
-
   _effectiveLimit(ident) {
     const trustBonus = ident.trust * this._defaultRate * 0.5;
     const base = this._defaultRate + trustBonus;
 
-    // if we have a behavioral baseline, use it
     if (ident.baseline) {
-      const baselineLimit = ident.baseline.mean + ident.baseline.stddev * 2;
-      return Math.max(base, baselineLimit);
+      return Math.max(base, ident.baseline.mean + ident.baseline.stddev * 2);
     }
     return base;
   }
 
   _updateBaseline(ident, currentRate) {
     if (!ident.baseline) {
-      ident.baseline = { samples: 0, mean: currentRate, m2: 0, stddev: 0 };
+      ident.baseline = new BehavioralBaseline();
     }
-    const b = ident.baseline;
-    b.samples++;
-    const delta = currentRate - b.mean;
-    b.mean += delta / b.samples;
-    const delta2 = currentRate - b.mean;
-    b.m2 += delta * delta2;
-    b.stddev = b.samples > 1 ? Math.sqrt(b.m2 / (b.samples - 1)) : 0;
+    ident.baseline.update(currentRate);
   }
 
   _escalate(ident) {

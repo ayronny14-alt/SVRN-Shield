@@ -1,31 +1,22 @@
 # @svrnsec/shield
 
-**Host network defense for Node.js.** Port scan detection, honeypot mesh, exfiltration sentinel, DNS tunnel detection, behavioral rate limiting, threat reputation scoring, and a serverless P2P threat mesh that shares intelligence across all your nodes — zero external servers.
+Network defense that actually lives in your app. Port scans, honeypots, exfil detection, DNS tunneling, rate limiting — all wired together and running in-process. No agents, no dashboards, no SaaS subscription.
 
-```
+```sh
 npm install @svrnsec/shield
 ```
 
 ---
 
-## What it does
+## The idea
 
-Shield is a full-stack network defense layer that runs embedded in your Node.js process. No agents, no SaaS, no $50k SIEM. Drop it in, wire up your events, and get:
+Most security tooling is something you bolt onto infrastructure. Shield is something you drop into code. It runs inside your Node.js process, hooks into what's already happening on the network, and emits events you can act on however you want — write to a database, call a webhook, firewall-block the IP, whatever.
 
-| Module | What it catches |
-|--------|----------------|
-| **Port scan detector** | SYN scans, connect scans, XMAS/NULL/FIN probes, slow scans |
-| **Honeypot mesh** | Real-service decoys (SSH, HTTP, FTP) that lure and fingerprint attackers |
-| **Exfiltration sentinel** | Large/rapid outbound bursts, connection anomalies |
-| **DNS monitor** | High-entropy queries, tunnel detection, domain generation algorithms |
-| **Behavioral rate limiter** | Adaptive trust scoring, escalating backoff, auto-ban |
-| **Threat intel** | Per-IP reputation with event history, blocklist integration |
-| **Alert pipeline** | Multi-handler alerts, webhooks, automatic IP blocking via firewall |
-| **ThreatMesh** | P2P threat sharing across all your nodes — no central server |
+It's also got a P2P threat mesh. If you're running Shield on multiple nodes, they talk to each other directly over TCP and share what they're seeing. One node catches a scanner, every node on the mesh knows about it within a few seconds. No central server involved.
 
 ---
 
-## Quick start
+## Getting started
 
 ```js
 import { Shield } from '@svrnsec/shield';
@@ -33,41 +24,66 @@ import { Shield } from '@svrnsec/shield';
 const shield = await Shield.create({
   honeypot: { ports: [2222, 8080, 2121] },
   mesh: { port: 41338, peers: ['10.0.0.2:41338'] },
+  persistence: { path: './data/shield.db' },   // optional — saves everything to SQLite
+  logging: { file: './logs/shield.ndjson' },    // optional — NDJSON for SIEM ingestion
 });
 
-shield.on('scan-detected', ({ ip, type, severity }) => {
-  console.log(`[SCAN] ${type} from ${ip} — ${severity}`);
+shield.on('scan', ({ ip, type, severity }) => {
+  console.log(`port scan from ${ip}: ${type} (${severity})`);
 });
 
-shield.on('threat-received', ({ ip, eventType, source }) => {
-  console.log(`[MESH] Threat intel from peer ${source}: ${eventType} @ ${ip}`);
+shield.on('campaign-detected', (campaign) => {
+  // IP has hit multiple kill-chain stages — this is real
+  console.log(campaign);
 });
 
 // Investigate any IP across all modules
 const report = shield.investigate('203.0.113.50');
-console.log(report);
+
+// Full forensic bundle — reputation, connections, kill chain, alerts, everything
+const evidence = shield.collectEvidence('203.0.113.50');
 ```
 
 ---
 
-## ThreatMesh — serverless P2P threat sharing
+## What's included
 
-The standout feature. Every Shield node signs its threat events with Ed25519 and broadcasts them over a peer-to-peer mesh. No bootstrap server. No central authority. When one node sees a port scan, every node on the mesh knows within seconds.
+**Port scan detector** — catches SYN scans, connect scans, XMAS/NULL/FIN probes, slow/distributed scans, UDP sweeps. Per-IP state tracking throughout.
 
-**LAN (zero config):** Nodes find each other via UDP multicast automatically.
+**Honeypot mesh** — listens on unused ports with realistic service banners (SSH, HTTP, FTP, SMTP, MySQL, Redis, and more). Any connection to a honeypot port is an immediate signal. The `auto` mode picks decoy ports intelligently based on what's already running.
 
-**Public internet:** Point at one peer; the Peer Exchange protocol propagates the rest.
+**Exfiltration sentinel** — watches for large outbound uploads, connections to unusual ports, destination bursts, asymmetric traffic ratios, and regular-interval beaconing. Learns per-process behavioral baselines so it stops crying wolf after a few minutes of warmup.
+
+**DNS monitor** — flags high-entropy subdomains, deep nesting, base32/hex-encoded labels, TXT query abuse. All the classic DNS tunneling fingerprints. Adaptive baseline detection so it adjusts to your specific traffic pattern.
+
+**Behavioral rate limiter** — tracks trust scores per identity. Good behavior raises the limit. Violations escalate — throttle, then backoff, then ban. Limits auto-adjust based on observed baseline rates.
+
+**Threat intel** — per-IP reputation scoring with event history, decay over time, and blocklist integration. Private IPs are always trusted. Everything else starts at 0.5 and moves based on what you're seeing.
+
+**Kill chain tracker** — maps events to MITRE ATT&CK techniques and correlates them across the recon → discovery → C&C → exfiltration chain. When an IP hits all four stages, it fires `campaign-detected` so you can escalate appropriately.
+
+**Alert pipeline** — deduplicates, severity-filters, fires webhooks, writes to whatever handlers you attach. Can auto-block via `netsh` (Windows) or `iptables` (Linux).
+
+**ThreatMesh** — P2P threat sharing over TCP with Ed25519 signed events. Peers find each other via UDP multicast on LAN or explicit peer list for public networks.
+
+---
+
+## ThreatMesh
+
+The bit that makes this more interesting than a standalone detector.
+
+Each Shield node generates an Ed25519 identity on first run and saves it to a keyfile. When it observes a threat, it signs the event and broadcasts it to peers. Peers verify the signature before acting on it. Forged events are dropped.
 
 ```js
 const shield = await Shield.create({
   mesh: {
-    port: 41338,                         // TCP listen port for mesh sync
-    peers: ['198.51.100.4:41338'],       // one bootstrap peer is enough
-    keyFile: './shield-identity.json',   // Ed25519 keypair, auto-generated
+    port: 41338,
+    peers: ['198.51.100.4:41338'],  // one peer is enough, PEX handles the rest
+    keyFile: './shield-identity.json',
   },
 });
 
-// Share a threat event to all peers
+// Share something you've seen
 await shield.mesh.share({
   ip: '203.0.113.50',
   eventType: 'port-scan',
@@ -75,40 +91,28 @@ await shield.mesh.share({
   detail: 'SYN scan, 89 ports in 2s',
 });
 
-// Receive events from peers
+// Receive from peers
 shield.on('threat-received', (event) => {
-  // event.ip, event.eventType, event.severity, event.nodeId, event.sig
-  // Already verified against peer's Ed25519 public key
+  // Already signature-verified by the time you get it
+  console.log(event.ip, event.eventType, event.nodeId);
 });
 ```
 
-**Security properties:**
-- Every event is signed — forged events are rejected
-- Nodes authenticate each other on connect
-- Peer exchange is rate-limited (30s cooldown, max 20 peers per exchange)
-- Inbound connections capped at 10/min per source IP
-- Wire buffer capped at 512KB — oversized messages drop the connection
-- Sync limited to 1,000 events per request
+Security properties: events are signed and rejected if verification fails, connection rate is capped at 10/min per source, wire buffer is capped at 512KB (oversized messages drop the connection), peer exchange has a 30s cooldown and a max of 20 peers per exchange.
 
 ---
 
-## Alert pipeline
+## Firewall integration
 
 ```js
 import { AlertPipeline } from '@svrnsec/shield/alerts';
 
 const alerts = new AlertPipeline({
-  minSeverity: 'medium',   // suppress low-noise events
-  cooldownMs: 10_000,      // deduplicate within 10s windows
-  autoBlock: true,         // firewall-block IPs on critical alerts
+  minSeverity: 'medium',
+  cooldownMs: 10_000,
+  autoBlock: true,  // calls netsh or iptables automatically on critical alerts
 });
 
-// Webhook integration
-alerts.onWebhook('https://hooks.slack.com/services/...', {
-  headers: { Authorization: 'Bearer ...' },
-});
-
-// Custom handler
 alerts.onAlert(async (alert) => {
   await db.insert('alerts', alert);
 });
@@ -117,83 +121,58 @@ await alerts.fire({
   type: 'port-scan',
   severity: 'critical',
   ip: '203.0.113.50',
-  detail: 'XMAS scan detected',
-  duration: 3600,  // auto-block for 1h
+  duration: 3600,  // block for 1h
 });
 
-// Manual firewall control (safe — validated before any shell call)
+// Manual control
 await alerts.blockIP('203.0.113.50', 7200);
 await alerts.unblockIP('203.0.113.50');
 ```
 
-`autoBlock: true` calls `netsh` on Windows or `iptables` on Linux/macOS. IPs are validated against a strict regex before any shell execution. Rule names use a SHA-256 hash of the IP — no user data reaches the shell argument list.
+IPs are validated against strict regex before any shell call. Rule names use a SHA-256 hash of the IP — no raw user data ever reaches the shell argument list.
 
 ---
 
-## Honeypot mesh
+## Forensic investigation
 
 ```js
-import { HoneypotMesh } from '@svrnsec/shield/honeypot';
+// Cross-module snapshot for an IP
+const report = shield.investigate('203.0.113.50');
+// { reputation, connections, scanActivity, honeypotHits, alerts, rateLimit, killChain }
 
-const honeypot = new HoneypotMesh({
-  ports: [
-    { port: 2222, service: 'ssh' },
-    { port: 8080, service: 'http' },
-    { port: 2121, service: 'ftp' },
-  ],
-});
-
-await honeypot.start();
-
-honeypot.on('connection', ({ ip, port, service, banner }) => {
-  console.log(`Honeypot hit: ${ip} probed ${service} on :${port}`);
-});
+// Full forensic bundle
+const evidence = shield.collectEvidence('203.0.113.50');
+// {
+//   metadata: { generatedAt, shieldVersion, targetIP },
+//   summary: { threatScore, classification, killChainStage, totalAlerts },
+//   evidence: { ...everything }
+// }
 ```
 
-Sends realistic service banners (SSH, HTTP, FTP) to fool scanners into revealing their intent. Every connection is logged with timing, banner exchange, and any data sent by the attacker.
+Connections are also automatically enriched with process info — PID, PPID, and command line — so you know exactly what process opened a connection, not just that it happened.
 
 ---
 
-## DNS tunnel detection
+## Persistence + logging
 
 ```js
-import { DNSMonitor } from '@svrnsec/shield/sentinel/dns';
-
-const dns = new DNSMonitor({ entropyThreshold: 3.8, window: 60_000 });
-
-dns.on('tunnel-suspected', ({ domain, entropy, ip }) => {
-  console.log(`DNS tunnel: ${domain} (entropy ${entropy.toFixed(2)}) from ${ip}`);
+const shield = await Shield.create({
+  persistence: { path: './data/shield.db' },          // SQLite via better-sqlite3
+  logging: {
+    file: './logs/shield.ndjson',   // NDJSON — pipe to Splunk, ELK, Graylog, whatever
+    level: 'info',
+    console: true,
+  },
 });
 ```
 
-Measures Shannon entropy of query labels. Legitimate domains cluster below 3.5 bits. DNS-over-TCP tunnels and DGA beacons spike above 4.0.
-
----
-
-## Behavioral rate limiter
-
-```js
-import { BehavioralRateLimiter } from '@svrnsec/shield/rate-limit';
-
-const limiter = new BehavioralRateLimiter({
-  defaultRate: 100,   // requests per window
-  window: 60_000,     // 1 minute
-});
-
-app.use((req, res, next) => {
-  const result = limiter.check(req.ip);
-  if (!result.allowed) return res.status(429).json({ error: result.reason });
-  next();
-});
-```
-
-Trust grows with clean behavior and decays with violations. Repeated offenders get exponentially shorter windows before escalating to an auto-ban.
+Every alert, reputation change, kill-chain stage, and mesh event gets written to the DB automatically. The NDJSON log is designed to be machine-readable from the start — structured fields, ISO timestamps, consistent event names.
 
 ---
 
 ## Pulse integration
 
-If you're also running `@svrnsec/pulse` (physics-layer bot detection), Shield's `PulseShield` fuses both signals into a single trust verdict:
+If you're running `@svrnsec/pulse` (physics-layer bot detection) alongside Shield, you can fuse both signals into a single trust verdict:
 
 ```js
 import { PulseShield } from '@svrnsec/shield/pulse';
@@ -205,83 +184,52 @@ const gate = new PulseShield({
   trustScore: computeTrustScore,
 });
 
-// Express middleware — fuses network reputation + physics proof
 app.use(gate.middleware({ threshold: 0.5 }));
 ```
 
-**Fusion weights (configurable):**
-
-| Signal | Default weight |
-|--------|---------------|
-| Network reputation | 25% |
-| Physics proof score | 35% |
-| Behavioral rate trust | 15% |
-| Honeypot history | 15% |
-| Coordination signal | 10% |
-
-Hard overrides: physics forgery caps score at 0.10. Blocklisted IPs cap at 0.05.
+Default fusion weights: physics proof 35%, network reputation 25%, honeypot history 15%, behavioral rate trust 15%, coordination signal 10%. All configurable. Hard overrides: physics forgery caps score at 0.10, blocklisted IPs cap at 0.05.
 
 ---
 
-## Full API
+## Events
 
-### `Shield.create(opts)` — factory
+| Event | Payload |
+|-------|---------|
+| `scan` | `{ ip, type, severity, portCount }` |
+| `honeypot` | `{ ip, port, banner, ts }` |
+| `exfil` | `{ pid, processName, type, severity, remoteAddr }` |
+| `dns-tunnel` | `{ domain, score, reasons }` |
+| `campaign-detected` | `{ ip, score, stages, stageCount, severity }` |
+| `threat-received` | `{ ip, eventType, severity, nodeId }` |
+| `peer-joined` | `{ nodeId, address }` |
+| `new-connection` | `{ remoteAddr, pid, commandLine, ppid }` |
+
+---
+
+## Config reference
 
 ```js
-const shield = await Shield.create({
-  scanner:    { portsPerWindow: 15, window: 10_000 },
-  honeypot:   { ports: [2222, 8080] },
-  sentinel:   { burstBytes: 5_000_000, burstWindow: 60_000 },
-  dns:        { entropyThreshold: 3.8 },
-  rateLimiter:{ defaultRate: 100, window: 60_000 },
-  threatIntel:{},
-  mesh:       { port: 41338, peers: [] },
+await Shield.create({
+  scanner:     { portsPerWindow: 15, window: 10_000 },
+  honeypot:    { auto: true, exclude: [80, 443] },
+  exfil:       { uploadBytesPerMin: 10_000_000 },
+  dns:         { entropyThreshold: 3.8, whitelist: ['compute.amazonaws.com'] },
+  rateLimit:   { defaultRate: 100, window: 60_000 },
+  mesh:        { port: 41338, peers: [], keyFile: './shield.json' },
+  persistence: { path: './shield.db' },
+  logging:     { file: './shield.ndjson', level: 'info', console: false },
 });
 ```
 
-### `shield.investigate(ip)`
-
-Returns a cross-module report for any IP:
-
-```js
-{
-  ip: '203.0.113.50',
-  reputation: { score: 0.12, classification: 'malicious', events: [...] },
-  scanActivity: { totalProbes: 89, ports: [...], lastSeen: 1712100000 },
-  rateProfile: { trust: 0.1, violations: 12, escalationLevel: 3 },
-  honeypotHits: 2,
-  blocked: true,
-}
-```
-
-### `shield.status`
-
-Live snapshot of all module stats.
-
-### Events
-
-| Event | Source | Payload |
-|-------|--------|---------|
-| `scan-detected` | scanner | `{ ip, type, severity, ports }` |
-| `honeypot-connection` | honeypot | `{ ip, port, service }` |
-| `exfil-suspected` | sentinel | `{ ip, bytes, window }` |
-| `dns-tunnel-suspected` | dns | `{ ip, domain, entropy }` |
-| `rate-limited` | rateLimiter | `{ id, trust, reason }` |
-| `alert` | alertPipeline | `{ type, severity, ip, ts }` |
-| `threat-received` | mesh | `{ ip, eventType, severity, nodeId }` |
-| `peer-joined` | mesh | `{ nodeId, address }` |
-| `peer-left` | mesh | `{ nodeId }` |
-
 ---
 
-## Security
+## Requirements
 
-Shield was built to not be a vulnerability surface:
+Node.js 18+. 
 
-- **No command injection** — shell calls (`netsh`/`iptables`) validate IPs against strict regex before execution; rule names use SHA-256 hashes, never raw user data
-- **No prototype pollution** — incoming JSON from headers and mesh peers is sanitized with `Object.create(null)` and explicit key checking
-- **No DoS via buffers** — wire buffer capped at 512KB, sync events capped at 1,000, connection rate capped at 10/min per source IP
-- **Cryptographic identity** — each ThreatMesh node generates a persistent Ed25519 keypair; events are signed and verified before being trusted
+Optional deps (install if you want the feature):
+- `better-sqlite3` — for persistence
+- `maxmind` — for GeoIP enrichment
 
 ---
 

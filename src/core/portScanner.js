@@ -121,8 +121,11 @@ export class PortScanDetector extends EventEmitter {
       detections.push(this._detect(tracker, SCAN_TYPES.FIN, 1));
     }
 
-    // 4. NULL scan (no flags)
-    if (proto === 'tcp' && !flags.syn && !flags.ack && !flags.fin && !flags.rst && !flags.psh) {
+    // 4. NULL scan (no flags set at all)
+    // Only trigger if we actually have flag data — empty flags objects from events
+    // ingested without packet inspection would otherwise cause false positives.
+    const hasExplicitFlags = Object.keys(flags).length > 0 || event.flagsComplete === true;
+    if (proto === 'tcp' && hasExplicitFlags && !flags.syn && !flags.ack && !flags.fin && !flags.rst && !flags.psh && !flags.urg) {
       detections.push(this._detect(tracker, SCAN_TYPES.NULL, 1));
     }
 

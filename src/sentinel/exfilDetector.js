@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { RingBuffer } from '../utils/ringBuffer.js';
 import { isPrivateIP } from '../utils/geoip.js';
+import { BehavioralBaseline } from '../utils/stats.js';
 
 export class ExfilDetector extends EventEmitter {
   constructor(opts = {}) {
@@ -49,7 +50,14 @@ export class ExfilDetector extends EventEmitter {
 
     // 1. Volume-based exfil: large uploads
     const recentSent = this._recentBytesSent(profile, 60_000);
-    if (recentSent > this._thresholds.uploadBytesPerMin) {
+    this._updateBaseline(profile, recentSent);
+
+    if (profile.baseline?.isAnomalous(recentSent, 4)) {
+      alerts.push(this._alert(profile, 'anomalous-upload-volume', 'critical', {
+        bytesPerMin: recentSent,
+        baseline: profile.baseline.toJSON(),
+      }));
+    } else if (recentSent > this._thresholds.uploadBytesPerMin) {
       alerts.push(this._alert(profile, 'high-upload-volume', 'high', {
         bytesPerMin: recentSent,
         threshold: this._thresholds.uploadBytesPerMin,
@@ -144,6 +152,16 @@ export class ExfilDetector extends EventEmitter {
       if (e.ts >= cutoff) total += (e.bytesSent || 0);
     }
     return total;
+  }
+
+  _updateBaseline(profile, bytesSent) {
+    if (!profile.baseline) {
+      profile.baseline = new BehavioralBaseline();
+    }
+    // only update if not currently anomalous (don't train on attack)
+    if (!profile.baseline.isAnomalous(bytesSent, 5)) {
+      profile.baseline.update(bytesSent);
+    }
   }
 
   _isUnusualPort(port) {

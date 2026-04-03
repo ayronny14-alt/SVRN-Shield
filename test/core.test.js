@@ -54,7 +54,7 @@ describe('PortScanDetector', () => {
       if (d.type === 'null_scan') detected = d;
     });
 
-    detector.ingest({ srcIp: '10.10.10.10', dstPort: 443, proto: 'tcp', flags: {} });
+    detector.ingest({ srcIp: '10.10.10.10', dstPort: 443, proto: 'tcp', flags: {}, flagsComplete: true });
     expect(detected).not.toBeNull();
   });
 
