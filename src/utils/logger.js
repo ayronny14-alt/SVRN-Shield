@@ -177,14 +177,14 @@ export class ShieldLogger extends EventEmitter {
       .map(([k, v]) => `${k}=${String(v).replace(/=/g, '\\=')}`)
       .join(' ');
     
-    return `CEF:0|SVRN|Shield|0.3.0|${e.module}|${msg}|${sev}|${fields}`;
+    return `CEF:0|SVRN|Shield|0.4.2|${e.module}|${msg}|${sev}|${fields}`;
   }
 
   _toLEEF(e) {
     const fields = Object.entries(e)
       .map(([k, v]) => `${k}=${String(v).replace(/\t/g, ' ')}`)
       .join('\t');
-    return `LEEF:1.0|SVRN|Shield|0.3.0|${e.event}|devTime=${e.ts}\t${fields}`;
+    return `LEEF:1.0|SVRN|Shield|0.4.2|${e.event}|devTime=${e.ts}\t${fields}`;
   }
 
   close() {
