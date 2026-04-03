@@ -1,7 +1,7 @@
 {
   "name": "@svrnsec/shield",
-  "version": "0.1.0",
-  "description": "Host network defense — port scan detection, honeypot mesh, exfiltration sentinel, DNS tunnel detection, behavioral rate limiting, and threat reputation scoring.",
+  "version": "0.2.0",
+  "description": "Host network defense — port scan detection, honeypot mesh, exfiltration sentinel, DNS tunnel detection, behavioral rate limiting, threat reputation scoring, and MITRE ATT&CK kill chain correlation.",
   "type": "module",
   "license": "MIT",
   "author": "Aaron Miller",
@@ -17,7 +17,8 @@
     "./sentinel":         { "import": "./src/sentinel/exfilDetector.js" },
     "./sentinel/dns":     { "import": "./src/sentinel/dnsMonitor.js" },
     "./pulse":            { "import": "./src/integrations/pulseShield.js" },
-    "./mesh":             { "import": "./src/mesh/threatMesh.js" }
+    "./mesh":             { "import": "./src/mesh/threatMesh.js" },
+    "./killchain":        { "import": "./src/core/killChain.js" }
   },
   "main": "./src/index.js",
   "files": ["src/", "LICENSE"],
@@ -38,7 +39,10 @@
     "dns-tunneling",
     "host-defense",
     "behavioral-analysis",
-    "reputation-scoring"
+    "reputation-scoring",
+    "mitre-attack",
+    "kill-chain",
+    "campaign-detection"
   ],
   "engines": {
     "node": ">=18.0.0"

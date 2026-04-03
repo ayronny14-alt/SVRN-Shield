@@ -14,6 +14,9 @@ import { HoneypotMesh } from './honeypot/mesh.js';
 import { ExfilDetector } from './sentinel/exfilDetector.js';
 import { DNSMonitor } from './sentinel/dnsMonitor.js';
 
+// Kill chain
+import { KillChainTracker } from './core/killChain.js';
+
 // Mesh
 import { ThreatMesh } from './mesh/threatMesh.js';
 
@@ -39,6 +42,9 @@ export class Shield extends EventEmitter {
     this.exfil = new ExfilDetector(opts.exfil);
     this.dns   = new DNSMonitor(opts.dns);
 
+    // kill chain tracker (always on)
+    this.killChain = new KillChainTracker(opts.killChain);
+
     // p2p threat mesh (optional — pass opts.mesh to enable)
     this.mesh = opts.mesh ? new ThreatMesh(opts.mesh) : null;
 
@@ -52,9 +58,10 @@ export class Shield extends EventEmitter {
     if (this._wired) return;
     this._wired = true;
 
-    // scan detection -> threat intel + alerts
+    // scan detection -> threat intel + kill chain + alerts
     this.scanner.on('scan-detected', (det) => {
       this.threatIntel.recordEvent(det.ip, 'scan-detected', det.severity);
+      this.killChain.record(det.ip, det.type ?? 'port-scan', { severity: det.severity, portCount: det.portCount });
       this.alerts.fire({
         type:      'scan-detected',
         ip:        det.ip,
@@ -65,9 +72,10 @@ export class Shield extends EventEmitter {
       this.emit('scan', det);
     });
 
-    // honeypot connections -> zero false positive threat intel
+    // honeypot connections -> kill chain + threat intel
     this.honeypot.on('connection', (conn) => {
       this.threatIntel.recordEvent(conn.ip, 'honeypot-hit', 'high');
+      this.killChain.record(conn.ip, 'honeypot', { port: conn.port, service: conn.service });
       this.scanner.ingest({ srcIp: conn.ip, dstPort: conn.port, flags: { syn: true } });
       this.alerts.fire({
         type:     'honeypot-hit',
@@ -79,10 +87,11 @@ export class Shield extends EventEmitter {
       this.emit('honeypot', conn);
     });
 
-    // exfil alerts -> threat intel + alerts
+    // exfil alerts -> kill chain + threat intel
     this.exfil.on('exfil-alert', (alert) => {
       if (alert.remoteAddr) {
         this.threatIntel.recordEvent(alert.remoteAddr, 'exfil-attempt', alert.severity);
+        this.killChain.record(alert.remoteAddr, 'exfil', { bytes: alert.bytes, pid: alert.pid });
       }
       this.alerts.fire({
         type:        `exfil:${alert.type}`,
@@ -93,8 +102,9 @@ export class Shield extends EventEmitter {
       this.emit('exfil', alert);
     });
 
-    // DNS tunneling -> alerts
+    // DNS tunneling -> kill chain + alerts
     this.dns.on('tunnel-detected', (alert) => {
+      this.killChain.record(alert.ip ?? alert.srcIp, 'dns-tunnel', { domain: alert.domain, entropy: alert.entropy });
       this.alerts.fire({
         type:     'dns-tunnel',
         severity: alert.score > 0.7 ? 'high' : 'medium',
@@ -102,6 +112,19 @@ export class Shield extends EventEmitter {
         score:    alert.score,
       });
       this.emit('dns-tunnel', alert);
+    });
+
+    // kill chain -> campaign detected
+    this.killChain.on('campaign-detected', (campaign) => {
+      this.alerts.fire({
+        type:      'campaign-detected',
+        ip:        campaign.ip,
+        severity:  campaign.severity,
+        stages:    campaign.stageCount,
+        score:     campaign.score,
+        techniques:campaign.stages.map(s => s.technique),
+      });
+      this.emit('campaign-detected', campaign);
     });
 
     // connection table -> forward event
@@ -155,6 +178,7 @@ export class Shield extends EventEmitter {
 
   stop() {
     if (this.mesh) this.mesh.stop();
+    this.killChain.stop();
     this.honeypot.stop();
     this.connections.stop();
     this.scanner.stop();
@@ -186,6 +210,7 @@ export class Shield extends EventEmitter {
       honeypot:    this.honeypot.stats,
       exfil:       this.exfil.stats,
       dns:         this.dns.stats,
+      killChain:   this.killChain.stats,
       mesh:        this.mesh?.stats  || null,
       pulse:       this.pulse?.stats || null,
     };
@@ -208,3 +233,4 @@ export { ExfilDetector } from './sentinel/exfilDetector.js';
 export { DNSMonitor } from './sentinel/dnsMonitor.js';
 export { ThreatMesh } from './mesh/threatMesh.js';
 export { PulseShield } from './integrations/pulseShield.js';
+export { KillChainTracker, TECHNIQUES } from './core/killChain.js';
