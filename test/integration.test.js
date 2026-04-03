@@ -38,7 +38,16 @@ describe('Shield Lifecycle Integration', () => {
     shield.honeypot.emit('connection', { ip: attackerIP, port: 2222, service: 'ssh' });
     expect(shield.killChain.getChain(attackerIP).stages).toHaveProperty('discovery');
 
-    // 3. C2: DNS Tunnel
+    // 3. EXPLOIT: Malicious Payload
+    shield.honeypot.emit('payload-alert', { 
+        ip: attackerIP, 
+        port: 2222, 
+        rule: 'Reverse Shell',
+        severity: 'critical',
+        match: 'bash -i >& /dev/tcp/'
+    });
+    
+    // 4. C2: DNS Tunnel
     shield.dns.emit('tunnel-detected', { 
       ip: attackerIP, 
       domain: 'v3ry-long-encoded-data.attacker.com', 

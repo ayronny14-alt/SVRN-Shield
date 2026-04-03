@@ -36,6 +36,8 @@ export const TECHNIQUES = {
   'c2':             { stage: 'c2',        tactic: 'Command and Control',  id: 'T1071',    sub: null,        name: 'Application Layer Protocol' },
   'rate-flood':     { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1498',    sub: null,        name: 'Network Denial of Service' },
   'scan-detected':  { stage: 'recon',     tactic: 'Reconnaissance',       id: 'T1046',    sub: 'T1595.001', name: 'Network Service Scanning' },
+  'payload-match':  { stage: 'discovery', tactic: 'Discovery',            id: 'T1210',    sub: 'T1590',     name: 'Exploitation of Remote Services' },
+  'exploit':        { stage: 'discovery', tactic: 'Discovery',            id: 'T1210',    sub: 'T1590',     name: 'Exploitation of Remote Services' },
 };
 
 const STAGE_ORDER = ['recon', 'discovery', 'c2', 'exfil'];

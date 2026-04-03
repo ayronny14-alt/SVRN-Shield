@@ -274,6 +274,26 @@ export class PulseShield extends EventEmitter {
   }
 
   /**
+   * Cross-reference: malicious payload hits vs Pulse attestation.
+   * Detecting an exploit payload from a 'verified' device is a critical signal
+   * of an advanced persistent threat (APT) or a zero-day bypass.
+   */
+  crossReferencePayload(ip, pulsePayload) {
+    const alerts = this._shield?.honeypot?.getPayloadAlerts?.(ip) || [];
+    if (alerts.length === 0) return null;
+
+    return {
+      anomaly: true,
+      type: 'verified-device-exploit',
+      severity: 'critical',
+      ip,
+      payloadAlerts: alerts.length,
+      rules: alerts.map(a => a.rule),
+      reason: 'Verified device attempting to send malicious exploit payloads — potential APT bypass detected',
+    };
+  }
+
+  /**
    * Population-level analysis: feed all recent Pulse proofs to coordination detector.
    * Returns whether the current traffic cohort shows signs of a bot farm.
    */

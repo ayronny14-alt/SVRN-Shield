@@ -2,6 +2,7 @@ import net from 'node:net';
 import dgram from 'node:dgram';
 import { EventEmitter } from 'node:events';
 import { getBanner, listBanners } from './banners.js';
+import { PayloadAnalyst } from '../core/payloadAnalyst.js';
 
 export class HoneypotMesh extends EventEmitter {
   constructor(opts = {}) {
@@ -14,6 +15,8 @@ export class HoneypotMesh extends EventEmitter {
     this._connections = new Map();
     this._stats = { totalConnections: 0, uniqueIPs: new Set(), byPort: {} };
     this._portAssignments = new Map(); // port -> banner type
+    this._payloadAlerts = [];
+    this._analyst = new PayloadAnalyst(opts.analyst);
   }
 
   assignPorts(openPorts) {
@@ -126,6 +129,15 @@ export class HoneypotMesh extends EventEmitter {
             bytes: chunk.length,
             preview: chunk.toString('utf8', 0, Math.min(chunk.length, 64)).replace(/[^\x20-\x7E]/g, '.'),
           });
+
+          // YARA-lite analysis
+          const matches = this._analyst.analyze(chunk);
+          for (const match of matches) {
+            const entry = { ip, port, banner: bannerName, ts: Date.now(), ...match };
+            this._payloadAlerts.push(entry);
+            if (this._payloadAlerts.length > 5000) this._payloadAlerts.shift();
+            this.emit('payload-alert', entry);
+          }
 
           const result = bannerInstance.respond(chunk);
           const response = result?.response || (Buffer.isBuffer(result) ? result : null);
@@ -249,5 +261,9 @@ export class HoneypotMesh extends EventEmitter {
       if (info.ip === ip) conns.push(info);
     }
     return conns;
+  }
+
+  getPayloadAlerts(ip) {
+    return this._payloadAlerts.filter(a => a.ip === ip);
   }
 }

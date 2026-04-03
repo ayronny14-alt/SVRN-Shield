@@ -208,6 +208,12 @@ export class Shield extends EventEmitter {
       if (this.persistence) this.persistence.saveForensicRecord(f);
       this.threatIntel.recordEvent(f.ip, 'honeypot-forensics', 'medium');
     });
+
+    this.honeypot.on('payload-alert', (p) => {
+      this.logger.security('Honeypot', 'malicious-payload', p.ip, p.severity, p);
+      this.threatIntel.recordEvent(p.ip, 'payload-match', p.severity);
+      this.killChain.record(p.ip, 'payload-match', p);
+    });
   }
 
   async start() {
@@ -251,6 +257,7 @@ export class Shield extends EventEmitter {
     this.rateLimiter.stop();
     this.threatIntel.stop();
     this.dns.stop();
+    this.sentinel.stop();
     this.emit('stopped');
   }
 

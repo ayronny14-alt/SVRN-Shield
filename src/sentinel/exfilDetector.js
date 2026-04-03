@@ -19,6 +19,11 @@ export class ExfilDetector extends EventEmitter {
     this._alerts = [];
     this._maxAlerts = opts.maxAlerts || 5000;
   }
+  stop() {
+    this._processProfiles.clear();
+    this._alerts = [];
+    this.emit('stopped');
+  }
 
   ingest(event) {
     const {
