@@ -13,7 +13,7 @@ Only the latest `MAJOR.MINOR` version is currently supported for security update
 
 We take the security of this project seriously. If you believe you've found a vulnerability, please do NOT create a public issue.
 
-Instead, please send an email to **security@svrn.xyz** or open a private security advisory on GitHub if available.
+Instead, please send an email to **admin@svrnsys.com** or open a private security advisory on GitHub if available.
 
 ### What to include:
 - A clear description of the vulnerability.

@@ -1,6 +1,6 @@
 {
   "name": "@svrnsec/shield",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Host network defense — port scan detection, honeypot mesh, exfiltration sentinel, DNS tunnel detection, behavioral rate limiting, threat reputation scoring, and MITRE ATT&CK kill chain correlation.",
   "type": "module",
   "license": "MIT",

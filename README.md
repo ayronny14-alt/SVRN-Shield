@@ -233,6 +233,12 @@ Optional deps (install if you want the feature):
 
 ---
 
+## Security
+
+We take the security of Shield seriously. If you've found a vulnerability, please do NOT create a public issue. Instead, send an email to **admin@svrnsys.com**. See [SECURITY.md](./SECURITY.md) for full details.
+
+---
+
 ## License
 
 MIT © Aaron Miller
