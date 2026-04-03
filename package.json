@@ -1,0 +1,46 @@
+{
+  "name": "@svrn/shield",
+  "version": "0.1.0",
+  "description": "Host network defense — port scan detection, honeypot mesh, exfiltration sentinel, DNS tunnel detection, behavioral rate limiting, and threat reputation scoring.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Aaron Miller",
+  "exports": {
+    ".":                  { "import": "./src/index.js", "node": "./src/index.js" },
+    "./scan-detect":      { "import": "./src/core/portScanner.js" },
+    "./connections":      { "import": "./src/core/connectionTable.js" },
+    "./rate-limit":       { "import": "./src/core/rateLimiter.js" },
+    "./threat-intel":     { "import": "./src/core/threatIntel.js" },
+    "./alerts":           { "import": "./src/core/alertPipeline.js" },
+    "./honeypot":         { "import": "./src/honeypot/mesh.js" },
+    "./honeypot/banners": { "import": "./src/honeypot/banners.js" },
+    "./sentinel":         { "import": "./src/sentinel/exfilDetector.js" },
+    "./sentinel/dns":     { "import": "./src/sentinel/dnsMonitor.js" },
+    "./pulse":            { "import": "./src/integrations/pulseShield.js" },
+    "./mesh":             { "import": "./src/mesh/threatMesh.js" }
+  },
+  "main": "./src/index.js",
+  "files": ["src/", "LICENSE"],
+  "scripts": {
+    "test": "node --experimental-vm-modules ./node_modules/jest-cli/bin/jest.js"
+  },
+  "devDependencies": {
+    "jest": "^29.0.0"
+  },
+  "keywords": [
+    "network-security",
+    "port-scan-detection",
+    "honeypot",
+    "intrusion-detection",
+    "rate-limiting",
+    "threat-intelligence",
+    "exfiltration-detection",
+    "dns-tunneling",
+    "host-defense",
+    "behavioral-analysis",
+    "reputation-scoring"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
