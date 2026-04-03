@@ -1,5 +1,5 @@
 {
-  "name": "@svrn/shield",
+  "name": "@svrnsec/shield",
   "version": "0.1.0",
   "description": "Host network defense — port scan detection, honeypot mesh, exfiltration sentinel, DNS tunnel detection, behavioral rate limiting, and threat reputation scoring.",
   "type": "module",
