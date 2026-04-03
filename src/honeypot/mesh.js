@@ -127,7 +127,15 @@ export class HoneypotMesh extends EventEmitter {
             preview: chunk.toString('utf8', 0, Math.min(chunk.length, 64)).replace(/[^\x20-\x7E]/g, '.'),
           });
 
-          const response = bannerInstance.respond(chunk);
+          const result = bannerInstance.respond(chunk);
+          const response = result?.response || (Buffer.isBuffer(result) ? result : null);
+          const meta = result?.meta || null;
+
+          if (meta) {
+            this.emit('forensics', { ip, port, banner: bannerName, ...meta });
+            connInfo.meta = { ...(connInfo.meta || {}), ...meta };
+          }
+
           if (response) {
             socket.write(response);
             connInfo.bytesSent += response.length;

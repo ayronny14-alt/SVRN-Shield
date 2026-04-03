@@ -109,6 +109,18 @@ export class PersistenceStore {
       );
 
       CREATE INDEX IF NOT EXISTS idx_mesh_ts ON mesh_events(ts);
+
+      CREATE TABLE IF NOT EXISTS forensics (
+        id      INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts      INTEGER NOT NULL,
+        ip      TEXT NOT NULL,
+        port    INTEGER,
+        banner  TEXT,
+        detail  TEXT NOT NULL,
+        created TEXT DEFAULT (datetime('now'))
+      );
+      CREATE INDEX IF NOT EXISTS idx_forensics_ip ON forensics(ip);
+      CREATE INDEX IF NOT EXISTS idx_forensics_ts ON forensics(ts);
     `);
   }
 
@@ -178,6 +190,14 @@ export class PersistenceStore {
       countAlerts: this._db.prepare(`SELECT COUNT(*) as count FROM alerts`),
       countEvents: this._db.prepare(`SELECT COUNT(*) as count FROM threat_events`),
       countReputations: this._db.prepare(`SELECT COUNT(*) as count FROM reputation`),
+
+      insertForensics: this._db.prepare(`
+        INSERT INTO forensics (ts, ip, port, banner, detail)
+        VALUES (?, ?, ?, ?, ?)
+      `),
+      getForensics: this._db.prepare(`
+        SELECT * FROM forensics WHERE ip = ? ORDER BY ts DESC LIMIT ?
+      `),
     };
   }
 
@@ -302,6 +322,27 @@ export class PersistenceStore {
   getMeshEvents(opts = {}) {
     if (!this._ready) return [];
     return this._stmts.getMeshEvents.all(opts.since || 0, opts.limit || 100);
+  }
+
+  // ── Forensic Persistence ────────────────────────────────────
+
+  saveForensicRecord(record) {
+    if (!this._ready) return;
+    this._stmts.insertForensics.run(
+      record.ts || Date.now(),
+      record.ip,
+      record.port || null,
+      record.banner || null,
+      JSON.stringify(record),
+    );
+  }
+
+  getForensics(ip, limit = 50) {
+    if (!this._ready) return [];
+    return this._stmts.getForensics.all(ip, limit).map(row => ({
+      ...row,
+      detail: JSON.parse(row.detail),
+    }));
   }
 
   // ── Stats ────────────────────────────────────────────────────

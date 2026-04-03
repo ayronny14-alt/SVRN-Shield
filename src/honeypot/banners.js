@@ -2,6 +2,7 @@
  * Fake service banners that mimic real services just enough to waste attacker time
  * and fingerprint their tooling.
  */
+import { calculateJA3 } from '../utils/ja3.js';
 
 const BANNERS = {
   ssh: {
@@ -45,13 +46,14 @@ const BANNERS = {
     respond(data) {
       // TLS ClientHello — respond with a ServerHello-like record that looks plausible
       if (data.length >= 5 && data[0] === 0x16 && data[1] === 0x03) {
+        const ja3 = calculateJA3(data);
         const alert = Buffer.from([
           0x15,       // Alert record
           0x03, 0x03, // TLS 1.2
           0x00, 0x02, // length
           0x02, 0x28, // fatal, handshake failure
         ]);
-        return alert;
+        return { response: alert, meta: { ja3 } };
       }
       return null;
     },

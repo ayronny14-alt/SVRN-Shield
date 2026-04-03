@@ -14,6 +14,7 @@ export class ThreatIntel extends EventEmitter {
     this._defaultScore = opts.defaultScore || 0.5;
     this._blockThreshold = opts.blockThreshold || 0.15;
     this._warnThreshold = opts.warnThreshold || 0.3;
+    this._providers = [];
     this._gcInterval = null;
   }
 
@@ -114,6 +115,29 @@ export class ThreatIntel extends EventEmitter {
   removeBlocklist(name) {
     this._blocklists.delete(name);
     return this;
+  }
+
+  addProvider(provider) {
+    this._providers.push(provider);
+    return this;
+  }
+
+  async fetchExternalReputation(ip) {
+    const results = [];
+    for (const provider of this._providers) {
+      try {
+        const data = await provider.check(ip);
+        if (data) {
+          results.push({ provider: provider.name, ...data });
+          if (data.scoreDelta) {
+            this.recordEvent(ip, `external:${provider.name}`, data.severity || 'medium');
+          }
+        }
+      } catch (err) {
+        this.emit('provider-error', { name: provider.name, error: err.message });
+      }
+    }
+    return results;
   }
 
   isBlocked(ip) {

@@ -20,21 +20,88 @@ let asnReader = null;
 let geoipReady = false;
 let geoipAttempted = false;
 
-export function ipToInt(ip) {
-  const parts = ip.split('.');
-  return ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+/**
+ * Robustly parse an IP address into its integer representation.
+ * Handles:
+ *  - Dotted-quad (127.0.0.1)
+ *  - Short IPv4 (127.1 -> 127.0.0.1)
+ *  - Octal (0177.0.0.1)
+ *  - Hex (0x7f.0.0.1)
+ *  - Integer (2130706433)
+ */
+export function parseIPv4(ip) {
+  if (typeof ip !== 'string') return null;
+  
+  let normalized = ip.toLowerCase().trim();
+  
+  // Strip IPv4-mapped IPv6 prefix
+  if (normalized.startsWith('::ffff:')) {
+    normalized = normalized.slice(7);
+  }
+
+  // Handle pure integer representation
+  if (/^\d+$/.test(normalized)) {
+    const n = parseInt(normalized, 10);
+    return (n >= 0 && n <= 0xFFFFFFFF) ? n >>> 0 : null;
+  }
+
+  const parts = normalized.split('.');
+  if (parts.length > 4) return null;
+
+  let val = 0;
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part) return null; // e.g. 127..1
+    
+    let n;
+    if (part.startsWith('0x')) {
+      n = parseInt(part, 16);
+    } else if (part.startsWith('0') && part.length > 1) {
+      n = parseInt(part, 8);
+    } else {
+      n = parseInt(part, 10);
+    }
+
+    if (isNaN(n) || n < 0) return null;
+
+    // Short formats: last part takes up remaining bytes (e.g. 127.1)
+    if (i === parts.length - 1) {
+      const remainingBytes = 4 - i;
+      const max = Math.pow(256, remainingBytes) - 1;
+      if (n > max) return null;
+      val = (val * Math.pow(256, remainingBytes)) + n;
+    } else {
+      if (n > 255) return null;
+      val = (val << 8) | n;
+    }
+  }
+
+  return (val >>> 0);
 }
 
 export function isPrivateIP(ip) {
-  if (ip === '::1' || ip === '0.0.0.0' || ip === '127.0.0.1') return true;
-  if (ip.startsWith('::ffff:')) ip = ip.slice(7);
-  if (ip.includes(':')) return ip === '::1';
-  const n = ipToInt(ip);
+  if (!ip || typeof ip !== 'string') return false;
+
+  const normalized = ip.toLowerCase().trim();
+  
+  // IPv6 Loopback / Any
+  if (normalized === '::1' || normalized === '0:0:0:0:0:0:0:1') return true;
+  if (normalized === '::' || normalized === '0:0:0:0:0:0:0:0') return true;
+
+  // Attempt IPv4 parsing (handles mapped/obfuscated)
+  const n = parseIPv4(ip);
+  if (n === null) {
+      // Not a valid IPv4, but could still be a private IPv6 (omitting complex IPv6 range checks for zero-dependency)
+      return false;
+  }
+
   return (
     (n >= 0x0A000000 && n <= 0x0AFFFFFF) || // 10.0.0.0/8
     (n >= 0xAC100000 && n <= 0xAC1FFFFF) || // 172.16.0.0/12
     (n >= 0xC0A80000 && n <= 0xC0A8FFFF) || // 192.168.0.0/16
     (n >= 0x7F000000 && n <= 0x7FFFFFFF) || // 127.0.0.0/8
+    (n >= 0xA9FE0000 && n <= 0xA9FEFFFF) || // 169.254.0.0/16 (Link-local)
     n === 0                                  // 0.0.0.0
   );
 }

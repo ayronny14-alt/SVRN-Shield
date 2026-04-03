@@ -3,6 +3,8 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { platform } from 'node:os';
 import crypto from 'node:crypto';
+import https from 'node:https';
+import http from 'node:http';
 
 const exec = promisify(execFile);
 
@@ -43,17 +45,32 @@ export class AlertPipeline extends EventEmitter {
 
   onWebhook(url, opts = {}) {
     this._handlers.push(async (alert) => {
-      try {
+      return new Promise((resolve, reject) => {
+        const parsedUrl = new URL(url);
+        const protocol = parsedUrl.protocol === 'https:' ? https : http;
         const body = JSON.stringify(alert);
-        await fetch(url, {
+
+        const request = protocol.request(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...opts.headers },
-          body,
-          signal: AbortSignal.timeout(opts.timeout || 5000),
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+            ...opts.headers
+          },
+          timeout: opts.timeout || 5000,
+        }, (res) => {
+          res.on('data', () => {});
+          res.on('end', () => resolve());
         });
-      } catch (err) {
-        this.emit('webhook-error', { url, error: err.message });
-      }
+
+        request.on('error', (err) => {
+          this.emit('webhook-error', { url, error: err.message });
+          reject(err);
+        });
+
+        request.write(body);
+        request.end();
+      });
     });
     return this;
   }

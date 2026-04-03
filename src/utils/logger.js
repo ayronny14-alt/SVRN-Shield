@@ -26,6 +26,7 @@ export class ShieldLogger extends EventEmitter {
     this._buffer = [];
     this._maxBuffer = opts.maxBuffer || 10_000;
     this._ready = false;
+    this._format = opts.format || 'json'; // 'json', 'cef', 'leef'
 
     if (this._filePath) {
       this._initFile().catch(err => {
@@ -79,7 +80,14 @@ export class ShieldLogger extends EventEmitter {
       ...data,
     };
 
-    const line = JSON.stringify(entry) + '\n';
+    let line;
+    if (this._format === 'cef') {
+      line = this._toCEF(entry) + '\n';
+    } else if (this._format === 'leef') {
+      line = this._toLEEF(entry) + '\n';
+    } else {
+      line = JSON.stringify(entry) + '\n';
+    }
 
     // console output
     if (this._console) {
@@ -154,9 +162,29 @@ export class ShieldLogger extends EventEmitter {
       warn: '\x1b[33m',     // yellow
       error: '\x1b[31m',    // red
       critical: '\x1b[41m', // red background
+      audit: '\x1b[32m',    // green
     };
     const reset = '\x1b[0m';
     return `${colors[level] || ''}${text}${reset}`;
+  }
+
+  _toCEF(e) {
+    const severityMap = { debug: 0, info: 3, warn: 5, error: 7, critical: 10, audit: 1 };
+    const sev = severityMap[e.level] ?? 0;
+    const msg = e.event || 'Security event';
+    const fields = Object.entries(e)
+      .filter(([k]) => !['ts', 'level', 'module', 'event'].includes(k))
+      .map(([k, v]) => `${k}=${String(v).replace(/=/g, '\\=')}`)
+      .join(' ');
+    
+    return `CEF:0|SVRN|Shield|0.3.0|${e.module}|${msg}|${sev}|${fields}`;
+  }
+
+  _toLEEF(e) {
+    const fields = Object.entries(e)
+      .map(([k, v]) => `${k}=${String(v).replace(/\t/g, ' ')}`)
+      .join('\t');
+    return `LEEF:1.0|SVRN|Shield|0.3.0|${e.event}|devTime=${e.ts}\t${fields}`;
   }
 
   close() {

@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
-import { ShieldLogger } from './utils/logger.js';
+import { ShieldLogger, createNullLogger } from './utils/logger.js';
 import { PersistenceStore } from './persistence/store.js';
+import { AbuseIPDBProvider } from './core/reputationProviders.js';
 
 // Core
 import { PortScanDetector } from './core/portScanner.js';
@@ -54,7 +55,9 @@ export class Shield extends EventEmitter {
     this.pulse = opts.pulse ? new PulseShield({ shield: this, ...opts.pulse }) : null;
 
     // audit logger
-    this.logger = new ShieldLogger(opts.logging);
+    this.logger = opts.logging !== false 
+      ? new ShieldLogger({ ...opts.logging, format: opts.logging?.format || 'json' }) 
+      : createNullLogger();
 
     // SQL persistence
     this.persistence = opts.persistence ? new PersistenceStore(opts.persistence) : null;
@@ -199,6 +202,12 @@ export class Shield extends EventEmitter {
         if (this.persistence) this.persistence.saveMeshEvent(e);
       });
     }
+
+    this.honeypot.on('forensics', (f) => {
+      this.logger.info('Honeypot', 'forensic-record', f);
+      if (this.persistence) this.persistence.saveForensicRecord(f);
+      this.threatIntel.recordEvent(f.ip, 'honeypot-forensics', 'medium');
+    });
   }
 
   async start() {
@@ -209,6 +218,11 @@ export class Shield extends EventEmitter {
     this.threatIntel.start();
 
     await this.honeypot.start();
+
+    // register reputation providers
+    if (this._opts.threatIntel?.abuseIPDBKey) {
+      this.threatIntel.addProvider(new AbuseIPDBProvider(this._opts.threatIntel.abuseIPDBKey));
+    }
 
     this.connections.start();
     this.dns.start();
@@ -250,6 +264,7 @@ export class Shield extends EventEmitter {
       alerts:            this.alerts.query({ ip }),
       rateLimit:         this.rateLimiter.getProfile(ip),
       killChain:         this.killChain.getChain(ip),
+      forensics:         this.persistence?.getForensics(ip) || [],
     };
   }
 
